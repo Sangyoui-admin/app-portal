@@ -107,7 +107,7 @@ function _normalize(app, i) {
   };
 }
 
-let normalizedApps = apps.map(_normalize);
+let normalizedApps = Array.isArray(apps) ? apps.map(_normalize) : [];
 
 /* ============================================================
    カテゴリフィルタボタンを生成/再生成
@@ -163,7 +163,7 @@ function iconHTML(app, large = false) {
    カード HTML 生成
    ============================================================ */
 function cardHTML(app) {
-  const dl      = app.downloads[0];
+  const dl      = app.downloads[0] || { url: '#', label: 'リンク未設定' };
   const targets = app.targets.map(t => `<span class="target-tag">${t}</span>`).join('');
   const images  = app.images || [];
 
@@ -241,7 +241,7 @@ function openModal(id) {
   if (!app) return;
 
   const images   = app.images || [];
-  const dl       = app.downloads;
+  const dl       = app.downloads || [];
   const features = app.features.map(f => `<li>${f}</li>`).join('');
   const targets  = app.targets.map(t => `<span class="chip">${t}</span>`).join('');
 
@@ -337,7 +337,17 @@ function openModal(id) {
 <div class="modal-section">
   <div class="section-label">ダウンロード</div>
   <div class="modal-downloads">${downloads}</div>
-</div>`;
+</div>
+
+${app.repoUrl ? `
+<div class="modal-section">
+  <div class="section-label">リポジトリ</div>
+  <div class="modal-downloads">
+    <a href="${app.repoUrl}" target="_blank" rel="noopener" class="download-btn dl-secondary">
+      GitHub リポジトリを開く
+    </a>
+  </div>
+</div>` : ''}`;
 
   // モーダル内スライドショーを初期化
   clearInterval(window._modalSlideTimer);

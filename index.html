@@ -334,17 +334,7 @@ function openModal(id) {
 <div class="modal-section">
   <div class="section-label">ダウンロード</div>
   <div class="modal-downloads">${downloads}</div>
-</div>
-
-${app.repoUrl ? `
-<div class="modal-section">
-  <div class="section-label">リポジトリ</div>
-  <div class="modal-downloads">
-    <a href="${app.repoUrl}" target="_blank" rel="noopener" class="download-btn dl-secondary">
-      GitHub リポジトリを開く
-    </a>
-  </div>
-</div>` : ''}`;
+</div>`;
 
   // モーダル内スライドショーを初期化
   clearInterval(window._modalSlideTimer);

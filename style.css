@@ -657,19 +657,22 @@ body {
 
 .card-images-wrap {
   margin: -22px -22px 0;   /* カードのpadding分を打ち消して端まで伸ばす */
-  height: 120px;            /* 高さを固定 (元の160pxの約3/4) */
+  height: 120px;            /* 高さ固定 */
   overflow: hidden;
   position: relative;
   background: var(--bg);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+/* 高さ120pxに合わせ、横幅は画像の縦横比に応じて自動調整 (クロップなし) */
 .card-single-img {
-  width: 100%;
-  height: 100%;
+  height: 100%;             /* コンテナの120pxに合わせる */
+  width: auto;              /* 縦横比を保って横幅を自動計算 */
+  max-width: 100%;          /* カード幅を超えないよう制限 */
   display: block;
-  object-fit: cover;        /* 縦横比を保ちながら上下クロップして埋める */
-  object-position: center;
 }
 
 /* ===========================

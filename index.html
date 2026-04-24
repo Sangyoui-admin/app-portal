@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>社内アプリ配布ポータル</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ========== Header ========== -->
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="./">
+      <div class="brand-icon">⚙</div>
+      <span class="brand-name">社内アプリ配布ポータル</span>
+    </a>
+    <div class="search-wrap">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      </svg>
+      <input type="text" id="searchInput" placeholder="アプリを検索…" autocomplete="off">
+    </div>
+  </div>
+</header>
+
+<!-- ========== Hero ========== -->
+<div class="hero">
+  <div class="hero-inner">
+    <h1>社内ツール &amp; アプリケーション</h1>
+    <p>業務効率化のために開発された社内専用ツールを配布しています</p>
+  </div>
+</div>
+
+<!-- ========== Main ========== -->
+<main class="main">
+  <div class="filter-bar" id="filterBar">
+    <button class="filter-btn active" data-category="all">すべて</button>
+  </div>
+
+  <p class="app-count" id="appCount"></p>
+
+  <!-- GitHub読み込み中インジケーター -->
+  <div class="loading-state" id="loadingState" hidden>
+    <div class="loading-spinner"></div>
+    <p>GitHubからアプリ情報を読み込み中…</p>
+  </div>
+
+  <div class="app-grid" id="appGrid"></div>
+
+  <div class="empty-state" id="emptyState" hidden>
+    <div class="empty-icon">🔍</div>
+    <h3>該当するアプリが見つかりませんでした</h3>
+    <p>キーワードやカテゴリを変えてお試しください</p>
+  </div>
+</main>
+
+<!-- ========== Footer ========== -->
+<footer class="site-footer">
+  <p>© 2024 社内システム部 &nbsp;|&nbsp; 問い合わせ: sys-team@example.com</p>
+</footer>
+
+<!-- ========== Modal ========== -->
+<div class="modal-overlay" id="modalOverlay" aria-hidden="true">
+  <div class="modal-sheet" id="modalSheet" role="dialog" aria-modal="true">
+    <div class="modal-close-bar">
+      <button class="modal-close" id="modalClose" aria-label="閉じる">
+        <svg width="11" height="11" viewBox="0 0 14 14" fill="none"
+             stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+          <path d="M1 1l12 12M13 1L1 13"/>
+        </svg>
+      </button>
+    </div>
+    <!-- モーダル画像エリア (画像がある場合のみ内容を挿入) -->
+    <div id="modalImages"></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script src="apps.js"></script>
+<script src="github-loader.js"></script>
+<script>
+/* ============================================================
+   静的データ (apps.js) の正規化
+   ============================================================ */
+function _normalize(app, i) {
+  return {
+    id:               app.id            || 'app-' + i,
+    name:             app.name          || '(無題)',
+    shortDescription: app.shortDescription || app.description || '',
+    description:      app.description      || app.shortDescription || '',
+    icon:             app.icon             || '📦',
+    iconColor:        app.iconColor        || '#607D8B',
+    iconImage:        app.iconImage        || null,
+    category:         app.category         || 'その他',
+    version:          app.version          || '-',
+    lastUpdated:      app.lastUpdated      || '-',
+    targets:          Array.isArray(app.targets) ? app.targets : [],
+    requirements:     app.requirements     || '-',
+    features:         Array.isArray(app.features) ? app.features : [],
+    images:           Array.isArray(app.images) ? app.images : [],
+    downloads:        Array.isArray(app.downloads) && app.downloads.length
+                        ? app.downloads
+                        : [{ label: app.url ? 'ダウンロード / 開く' : 'リンク未設定',
+                             url: app.url || '#', primary: true }]
+  };
+}
+
+let normalizedApps = apps.map(_normalize);
+
+/* ============================================================
+   カテゴリフィルタボタンを生成/再生成
+   ============================================================ */
+const filterBar = document.getElementById('filterBar');
+
+function buildCategories() {
+  Array.from(filterBar.querySelectorAll('.filter-btn:not([data-category="all"])')).forEach(b => b.remove());
+  [...new Set(normalizedApps.map(a => a.category))].forEach(cat => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.dataset.category = cat;
+    btn.textContent = cat;
+    filterBar.appendChild(btn);
+  });
+}
+buildCategories();
+
+/* ============================================================
+   状態管理
+   ============================================================ */
+let activeCategory = 'all';
+let searchQuery    = '';
+
+function getFiltered() {
+  return normalizedApps.filter(app => {
+    const matchCat    = activeCategory === 'all' || app.category === activeCategory;
+    const matchSearch = !searchQuery ||
+      [app.name, app.shortDescription, app.category, ...app.targets]
+        .join(' ').toLowerCase().includes(searchQuery);
+    return matchCat && matchSearch;
+  });
+}
+
+/* ============================================================
+   アイコン HTML 生成
+   ============================================================ */
+function iconHTML(app, large = false) {
+  const size     = large ? 88 : 64;
+  const fontSize = large ? 40 : 28;
+  const cls      = large ? 'modal-icon' : 'app-icon';
+  if (app.iconImage) {
+    return `<img src="${app.iconImage}" alt="" class="${cls}"
+              style="width:${size}px;height:${size}px;">`;
+  }
+  return `<div class="${cls}"
+    style="background:${app.iconColor};width:${size}px;height:${size}px;font-size:${fontSize}px;">
+    ${app.icon}
+  </div>`;
+}
+
+/* ============================================================
+   カード HTML 生成
+   ============================================================ */
+function cardHTML(app) {
+  const dl      = app.downloads[0];
+  const targets = app.targets.map(t => `<span class="target-tag">${t}</span>`).join('');
+  const images  = app.images || [];
+
+  let imagesHTML = '';
+  if (images.length > 0) {
+    const slides = images.map(src =>
+      `<img class="card-slide-img" src="${src}" alt="" loading="lazy">`
+    ).join('');
+    const dots = images.length > 1
+      ? `<div class="slide-dots">${images.map((_, i) =>
+          `<span class="slide-dot${i === 0 ? ' active' : ''}"></span>`
+        ).join('')}</div>`
+      : '';
+    imagesHTML = `<div class="card-images-wrap">
+      <div class="card-images-track">${slides}</div>
+      ${dots}
+    </div>`;
+  }
+
+  return `
+<article class="app-card${images.length ? ' has-images' : ''}" data-id="${app.id}"
+         role="button" tabindex="0" aria-label="${app.name} の詳細を見る">
+  ${imagesHTML}
+  <div class="card-header">
+    ${iconHTML(app)}
+    <div class="card-meta">
+      <span class="app-category">${app.category}</span>
+      <div class="app-name">${app.name}</div>
+      <div class="app-version">v${app.version} &nbsp;·&nbsp; ${app.lastUpdated}</div>
+    </div>
+  </div>
+  <p class="app-short-desc">${app.shortDescription}</p>
+  <div class="app-targets">${targets}</div>
+  <div class="card-footer">
+    <button class="btn btn-detail">詳細を見る</button>
+    <a class="btn btn-primary dl-btn" href="${dl.url}" target="_blank"
+       rel="noopener" aria-label="${app.name} をダウンロード"
+       onclick="event.stopPropagation()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
+        <path d="M12 5v14M5 12l7 7 7-7"/>
+      </svg>
+      DL
+    </a>
+  </div>
+</article>`;
+}
+
+/* ============================================================
+   グリッドを再描画
+   ============================================================ */
+function renderGrid() {
+  const filtered = getFiltered();
+  const grid     = document.getElementById('appGrid');
+  const countEl  = document.getElementById('appCount');
+  const emptyEl  = document.getElementById('emptyState');
+
+  countEl.textContent = `${filtered.length} 件のアプリ`;
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '';
+    emptyEl.removeAttribute('hidden');
+  } else {
+    emptyEl.setAttribute('hidden', '');
+    grid.innerHTML = filtered.map(cardHTML).join('');
+    if (typeof GH_initSlides === 'function') GH_initSlides();
+  }
+}
+
+/* ============================================================
+   モーダルを開く
+   ============================================================ */
+function openModal(id) {
+  const app = normalizedApps.find(a => a.id === id);
+  if (!app) return;
+
+  const images   = app.images || [];
+  const dl       = app.downloads;
+  const features = app.features.map(f => `<li>${f}</li>`).join('');
+  const targets  = app.targets.map(t => `<span class="chip">${t}</span>`).join('');
+
+  const downloads = dl.map(d => `
+    <a href="${d.url}" target="_blank" rel="noopener"
+       class="download-btn ${d.primary ? 'dl-primary' : 'dl-secondary'}">
+      ${d.primary
+        ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round">
+             <path d="M12 5v14M5 12l7 7 7-7"/>
+           </svg>`
+        : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+           </svg>`}
+      ${d.label}
+    </a>`).join('');
+
+  const descHTML = (app.description || '')
+    .split('\n\n')
+    .map(para => `<p class="modal-description">${para.replace(/\n/g, '<br>')}</p>`)
+    .join('');
+
+  // モーダル画像エリア (close-bar の外、modal-body の前)
+  const modalImagesEl = document.getElementById('modalImages');
+  if (images.length > 0) {
+    const slides = images.map(src =>
+      `<img class="modal-slide-img" src="${src}" alt="" loading="lazy">`
+    ).join('');
+    const dots = images.length > 1
+      ? `<div class="slide-dots modal-slide-dots">${images.map((_, i) =>
+          `<span class="slide-dot${i === 0 ? ' active' : ''}"></span>`
+        ).join('')}</div>`
+      : '';
+    modalImagesEl.innerHTML = `<div class="modal-images-wrap">
+      <div class="modal-images-track">${slides}</div>
+      ${dots}
+    </div>`;
+  } else {
+    modalImagesEl.innerHTML = '';
+  }
+
+  document.getElementById('modalBody').innerHTML = `
+<div class="modal-app-header">
+  ${iconHTML(app, true)}
+  <div class="modal-app-info">
+    <span class="modal-category-badge">${app.category}</span>
+    <h2 class="modal-app-name">${app.name}</h2>
+    <div class="modal-meta-row">
+      <span class="meta-item">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/>
+          <path d="M16 2v4M8 2v4M3 10h18"/>
+        </svg>
+        最終更新: ${app.lastUpdated}
+      </span>
+      <span class="meta-item">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+        </svg>
+        v${app.version}
+      </span>
+    </div>
+  </div>
+</div>
+
+<hr class="modal-divider">
+
+<div class="modal-section">
+  <div class="section-label">概要</div>
+  ${descHTML || '<p class="modal-description">—</p>'}
+</div>
+
+<div class="modal-section">
+  <div class="section-label">主な機能</div>
+  <ul class="features-list">${features || '<li>—</li>'}</ul>
+</div>
+
+<div class="modal-two-col">
+  <div class="modal-section">
+    <div class="section-label">対象部署</div>
+    <div class="target-chips">${targets || '<span class="chip">—</span>'}</div>
+  </div>
+  <div class="modal-section">
+    <div class="section-label">動作環境</div>
+    <div class="requirements-box">${app.requirements}</div>
+  </div>
+</div>
+
+<hr class="modal-divider">
+
+<div class="modal-section">
+  <div class="section-label">ダウンロード</div>
+  <div class="modal-downloads">${downloads}</div>
+</div>`;
+
+  // モーダル内スライドショーを初期化
+  clearInterval(window._modalSlideTimer);
+  const mTrack = modalImagesEl.querySelector('.modal-images-track');
+  if (mTrack) {
+    const mSlides = Array.from(mTrack.querySelectorAll('.modal-slide-img'));
+    const mDots   = Array.from(modalImagesEl.querySelectorAll('.slide-dot'));
+    let mCur = 0;
+    function mGoTo(idx) {
+      mCur = (idx + mSlides.length) % mSlides.length;
+      mTrack.style.transform = 'translateX(-' + (mCur * 100) + '%)';
+      mDots.forEach((d, i) => d.classList.toggle('active', i === mCur));
+    }
+    if (mSlides.length > 1) {
+      const interval = (typeof GH_CONFIG !== 'undefined') ? GH_CONFIG.slideInterval : 6000;
+      window._modalSlideTimer = setInterval(() => mGoTo(mCur + 1), interval);
+    }
+  }
+
+  const overlay = document.getElementById('modalOverlay');
+  overlay.classList.add('open');
+  overlay.removeAttribute('aria-hidden');
+  document.body.style.overflow = 'hidden';
+  document.getElementById('modalClose').focus();
+}
+
+/* ============================================================
+   モーダルを閉じる
+   ============================================================ */
+function closeModal() {
+  clearInterval(window._modalSlideTimer);
+  const overlay = document.getElementById('modalOverlay');
+  overlay.classList.remove('open');
+  overlay.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+
+/* ============================================================
+   イベントリスナー
+   ============================================================ */
+
+/* カードクリック */
+document.getElementById('appGrid').addEventListener('click', e => {
+  if (e.target.closest('.dl-btn')) return;
+  const card = e.target.closest('.app-card');
+  if (card) openModal(card.dataset.id);
+});
+
+/* カードキーボード操作 */
+document.getElementById('appGrid').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('.app-card');
+  if (card) { e.preventDefault(); openModal(card.dataset.id); }
+});
+
+/* カテゴリフィルタ */
+filterBar.addEventListener('click', e => {
+  const btn = e.target.closest('.filter-btn');
+  if (!btn) return;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeCategory = btn.dataset.category;
+  renderGrid();
+});
+
+/* 検索 */
+document.getElementById('searchInput').addEventListener('input', e => {
+  searchQuery = e.target.value.toLowerCase().trim();
+  renderGrid();
+});
+
+/* モーダルを閉じる */
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modalOverlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ============================================================
+   初期描画 (静的データで先行表示)
+   ============================================================ */
+renderGrid();
+
+/* ============================================================
+   GitHub から自動読み込み (非同期)
+   ============================================================ */
+(async () => {
+  if (typeof GH_loadApps !== 'function') return;
+
+  const loadingEl = document.getElementById('loadingState');
+  loadingEl.removeAttribute('hidden');
+
+  try {
+    const ghApps = await GH_loadApps();
+    if (ghApps.length > 0) {
+      normalizedApps = ghApps;
+      buildCategories();
+
+      // 選択中カテゴリが存在しない場合は「すべて」に戻す
+      const cats = new Set(normalizedApps.map(a => a.category));
+      if (activeCategory !== 'all' && !cats.has(activeCategory)) {
+        activeCategory = 'all';
+        document.querySelectorAll('.filter-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.category === 'all');
+        });
+      }
+
+      renderGrid();
+    }
+  } catch (e) {
+    console.error('[GitHub Loader] エラー:', e);
+  }
+
+  loadingEl.setAttribute('hidden', '');
+})();
+</script>
+</body>
+</html>
